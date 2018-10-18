@@ -13,6 +13,7 @@
 # Please provide feedback in our support forum if you encountered difficulties.
 ################################################################################
 # read in functions shared by installer and uninstaller
+CLONE_PATH=$(pwd)
 source $(dirname "$0")/install-utilities.sh
 
 
@@ -24,7 +25,7 @@ function check_supported_os()
     RC=0
     command -v lsb_release > /dev/null || RC=$?
     [ $RC -ne 0 ] && exec_and_search_errors "$SUDO_PREFIX apt-get $APT_QUIET install -y lsb-release"
-    
+
     DISTRO="$(lsb_release -i 2>/dev/null | cut -f 2)"
     VERSION="$(lsb_release -r 2>/dev/null | awk '{ print $2 }' | sed 's/[.]//')"
     OS_DISTRO="${DISTRO:-INVALID}"
@@ -59,7 +60,7 @@ function check_prerequisites()
             exit 1
         fi
     done
-    
+
     check_supported_os
 }
 
@@ -118,7 +119,7 @@ function init_installer()
 
     ### get constants (function is in install-utilities.sh) 
     initialize_constants
-    
+
     ### make sure system has required prerequisites
     check_prerequisites
 
@@ -131,7 +132,7 @@ function init_installer()
     NCSDK_VERSION=`cat ${VERSION_FILE}`
     echo "Installer NCSDK version: $NCSDK_VERSION"
     echo ""
-    
+
     ### read config file (function is in install-utilities.sh) 
     read_ncsdk_config
 
@@ -174,7 +175,7 @@ function make_installer_dirs()
     # Get absolute dir
     INSTALL_DIR="$( cd ${INSTALL_DIR} && pwd )"
 
-    
+
     # Create directories if needed
     $SUDO_PREFIX mkdir -p $SYS_INSTALL_DIR/include/mvnc2
     $SUDO_PREFIX mkdir -p $SYS_INSTALL_DIR/lib/mvnc
@@ -184,7 +185,7 @@ function make_installer_dirs()
 # download_and_copy_files - download tarball and copy to install dir
 function download_and_copy_files()
 {
-download_filename=NCSDK-2.08.01.02.tar.gz
+    download_filename=NCSDK-2.08.01.02.tar.gz
     if [ ! -f ${download_filename} ] ; then
         echo "Downloading ${download_filename}"
         # ncsdk_download_link set in install-utilities.sh function initialize_constants()
@@ -198,7 +199,7 @@ download_filename=NCSDK-2.08.01.02.tar.gz
     ${SUDO_PREFIX} cp ./uninstall.sh ${INSTALL_DIR}/
     ${SUDO_PREFIX} cp ./install-utilities.sh ${INSTALL_DIR}/
     ${SUDO_PREFIX} cp ./ncsdk.conf ${INSTALL_DIR}/
-    
+
     # save current dir
     FROM_DIR=$PWD
 
@@ -220,6 +221,8 @@ download_filename=NCSDK-2.08.01.02.tar.gz
     ${SUDO_PREFIX} cp ${FROM_DIR}/requirements.txt ${INSTALL_DIR}/NCSDK 
     ${SUDO_PREFIX} cp ${FROM_DIR}/requirements_apt.txt ${INSTALL_DIR}/NCSDK 
     ${SUDO_PREFIX} cp ${FROM_DIR}/requirements_apt_raspbian.txt ${INSTALL_DIR}/NCSDK 
+
+    ${SUDO_PREFIX} cp -r ${INSTALL_DIR}/NCSDK/ncsdk-{armv7l,aarch64}
 }
 
 
@@ -246,7 +249,7 @@ function print_previous_ncsdk_install_info()
 
         # compare_versions sets VERCOMP_RETVAL to 0, 1 or 2
         compare_versions ${PREV_NCSDK_VER} ${NCSDK_VERSION}
-        
+
         if [ ${VERCOMP_RETVAL} -eq 0 ]; then
             echo "Previously installed version is the same as installer version, overwriting..."
         elif [ ${VERCOMP_RETVAL} -eq 1 ]; then
@@ -291,7 +294,7 @@ function setup_virtualenv()
     [ "${VERBOSE}" = "yes" ] && echo "Installing prerequisites for virtualenv"
     ${SUDO_PREFIX} apt-get $APT_QUIET install python-virtualenv -y
     echo ""
-    
+
     VIRTUALENV_DIR=${INSTALL_DIR}/virtualenv-python
     # if virtualenv dir exists, try to activate it
     if [ -d ${VIRTUALENV_DIR} ] ; then
@@ -381,7 +384,7 @@ function install_python_dependencies()
                 exit 1
             fi  
         fi
-        
+
     elif [ "${OS_DISTRO,,}" = "raspbian" ] ; then
         # for Raspian, use apt with python3-* if available
         exec_and_search_errors "$SUDO_PREFIX apt-get $APT_QUIET install -y $(cat "$DIR/requirements_apt_raspbian.txt")"
@@ -404,7 +407,7 @@ function install_python_dependencies()
 #                   sets FIND_TENSORFLOW__FOUND_SUPPORTED_VERSION=2 when TensorFlow isn't installed
 function find_tensorflow()
 {
-    SUPPORTED_TENSORFLOW_VERSION=1.9.0
+    SUPPORTED_TENSORFLOW_VERSION=1.11.0
     RC=0
     $PIP_PREFIX pip3 show $1 1> /dev/null || RC=$?
     if [ $RC -eq 0 ]; then
@@ -508,13 +511,13 @@ function check_opencv_caffe_conflict()
     # Running make install runs ./uninstall-opencv.sh which attempts to remove OpenCV built from source for this reason.
     # Note: The OpenCV version apt-get installs in /usr/lib doesn't link against libprotobuf-lite.so, so doesn't have this problem.
     if [ "${CAFFE_FLAVOR}" = "ssd" ]; then
-	LIBOPENCV_HIGHGUI=/usr/local/lib/libopencv_highgui.so.?.?.?
-	RC=0
-	[ -f  ${LIBOPENCV_HIGHGUI} ] && ldd ${LIBOPENCV_HIGHGUI} | grep libprotobuf-lite >& /dev/null || RC=$?
-	if [ $RC -eq 0 ]; then
+        LIBOPENCV_HIGHGUI=/usr/local/lib/libopencv_highgui.so.?.?.?
+        RC=0
+        [ -f  ${LIBOPENCV_HIGHGUI} ] && ldd ${LIBOPENCV_HIGHGUI} | grep libprotobuf-lite >& /dev/null || RC=$?
+        if [ $RC -eq 0 ]; then
             echo ""
             echo ""
-	    echo "**********************************************************************"
+            echo "**********************************************************************"
             echo "          ERROR - Compatibility Issue Detected with OpenCV"
             echo ""
             echo "The OpenCV library" ${LIBOPENCV_HIGHGUI} "links against libprotobuf-lite"
@@ -527,7 +530,7 @@ function check_opencv_caffe_conflict()
             echo "If you have run make install or uninstall-opencv.sh and see this, try uninstalling OpenCV installed in /usr/local/ manually"
             echo "Will exit"
             exit 1
-	fi
+        fi
     fi
 }
 
@@ -644,13 +647,23 @@ function install_caffe()
     echo "Compiling Caffe..."
     mkdir -p build
     cd build
-    eval cmake .. $STDOUT_QUIET
+    if [ "$CAFFE_USE_CUDA" = "no" ]; then
+        eval cmake \
+            -DCMAKE_CXX_FLAGS="-std=c++14" \
+            .. $STDOUT_QUIET
+    else
+        eval cmake \
+            -DCPU_ONLY=OFF \
+            -DCMAKE_CXX_FLAGS="-std=c++14" \
+            -DCUDA_NVCC_FLAGS="-std=c++14" \
+            .. $STDOUT_QUIET
+    fi
     eval make -j $MAKE_NJOBS all $STDOUT_QUIET
 
     echo "Installing caffe..."
-    eval make install $STDOUT_QUIET
+    $SUDO_PREFIX make install
     # You can use 'make runtest' to test this stage manually :)
-    
+
     # Add PYTHONPATH if not already there
     printf "Removing previous references to previous caffe installation..."
     # Remove older references
@@ -683,8 +696,16 @@ function install_api()
     # Copy firmware(FW) to destination
     $SUDO_PREFIX cp $SDK_DIR/fw/MvNCAPI-*.mvcmd $SYS_INSTALL_DIR/lib/mvnc/
 
+    # Compile native version of api library
+    pushd "$CLONE_PATH"/api/src &>/dev/null
+    make
+    cp $SDK_DIR/fw/MvNCAPI-*.mvcmd mvnc/
+    $SUDO_PREFIX make install
+    popd &>/dev/null
+
     # Copy C API to destination
     $SUDO_PREFIX cp $FROM_DIR/api/include/mvnc.h $SYS_INSTALL_DIR/include/mvnc2    
+    $SUDO_PREFIX cp $SYS_INSTALL_DIR/lib/libmvnc.so.0 $SDK_DIR/api/c/
     $SUDO_PREFIX cp $SDK_DIR/api/c/libmvnc.so.0 $SYS_INSTALL_DIR/lib/mvnc/
 
     if [ -f $SDK_DIR/api/c/libmvnc_highclass.so.0 ] ; then
@@ -695,7 +716,7 @@ function install_api()
     check_and_remove_file $SYS_INSTALL_DIR/include/mvnc.h
     check_and_remove_file $SYS_INSTALL_DIR/include/ncHighClass.h
     $SUDO_PREFIX ln -s $SYS_INSTALL_DIR/include/mvnc2/mvnc.h $SYS_INSTALL_DIR/include/mvnc.h
-    
+
     check_and_remove_file $SYS_INSTALL_DIR/lib/libmvnc.so.0
     check_and_remove_file $SYS_INSTALL_DIR/lib/libmvnc.so
     check_and_remove_file $SYS_INSTALL_DIR/lib/libmvnc_highclass.so 
@@ -706,7 +727,7 @@ function install_api()
         $SUDO_PREFIX ln -s $SYS_INSTALL_DIR/lib/mvnc/libmvnc_highclass.so.0 $SYS_INSTALL_DIR/lib/libmvnc_highclass.so
     fi
     echo "NCS Include files have been installed in $SYS_INSTALL_DIR/include"
-    
+
     $SUDO_PREFIX ldconfig
 
     $SUDO_PREFIX cp -r $DIR/version.txt $INSTALL_DIR/
@@ -750,7 +771,7 @@ function finalize_installer()
     if [ $RC -ne 0 ] ; then
         echo "Warning udevadm trigger return code = ${RC}"
     fi
-    
+
     # Final touch up
     CURRENT_USER=$(id -u -n)    
     echo "Adding user '$CURRENT_USER' to 'users' group"
@@ -771,7 +792,7 @@ function finalize_installer()
             exit 1
         fi
     fi
-    
+
     echo ""
     echo -e "${GREEN}Installation is complete.${NC}"
     echo "Please provide feedback in our support forum if you encountered difficulties."
@@ -817,13 +838,13 @@ function main()
 
     # If previous install was from NCSDK 1.x release, move them
     detect_and_move_ncsdk1
-    
+
     # Find old installs, if found, print old version and remove it
     # find_previous_install and remove_previous_install are in install-utilities.sh
     find_previous_install
     print_previous_ncsdk_install_info
     remove_previous_install
-    
+
     ### installation phase
     make_installer_dirs
     download_and_copy_files
